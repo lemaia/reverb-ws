@@ -10,7 +10,7 @@ services:
       # Laravel Core
       APP_NAME: ReverbServer
       APP_ENV: production
-      APP_DEBUG: false
+      APP_DEBUG: "false"
       APP_URL: http://localhost:8080
       APP_KEY: ${APP_KEY:-} # Será gerado no entrypoint, se vazio
 
