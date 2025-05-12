@@ -36,10 +36,9 @@ prod:
 		echo "❌ REVERB_DOMAIN não encontrado no .env. Execute 'make cert' primeiro."; \
 		exit 1; \
 	fi
-	@echo "🔐 Verificando certificado SSL para $(DOMAIN)..."
-	@if [ ! -f "/etc/letsencrypt/live/$(DOMAIN)/fullchain.pem" ]; then \
-		echo "📄 Certificado não encontrado. Executando 'make cert'..."; \
-		make cert; \
+	@if [ ! -f ".cert-ok" ]; then \
+		echo "📄 Certificado não encontrado. Execute 'make cert' primeiro."; \
+		exit 1; \
 	fi
 	@echo "🚀 Subindo ambiente de produção (HTTPS) para $(DOMAIN)..."
 	$(COMPOSE) -f docker-compose.yml --project-name $(PROJECT_NAME)-prod up --build -d
@@ -54,7 +53,7 @@ stop-prod:
 # ==========================
 
 cert:
-	@./generate-cert.sh
+	@./generate-cert.sh && touch .cert-ok
 
 status:
 	docker ps

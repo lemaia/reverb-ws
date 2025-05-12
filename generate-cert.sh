@@ -1,50 +1,33 @@
 #!/bin/bash
 
-# 1. Prompt interativo
-read -p "📧 Digite o e-mail para o Certbot: " EMAIL
-read -p "🌐 Digite o domínio (ex: reverb.seudominio.com): " DOMAIN
+set -e
 
-# 2. Validação básica
-if [ -z "$EMAIL" ] || [ -z "$DOMAIN" ]; then
-  echo "❌ E-mail e domínio são obrigatórios."
+# Carrega variáveis do .env
+source .env
+
+if [ -z "$REVERB_DOMAIN" ]; then
+  echo "❌ Variável REVERB_DOMAIN não encontrada no .env"
   exit 1
 fi
 
-# 3. Atualizar .env
-if grep -q "^REVERB_DOMAIN=" .env; then
-  sed -i.bak "s/^REVERB_DOMAIN=.*/REVERB_DOMAIN=$DOMAIN/" .env
-else
-  echo "REVERB_DOMAIN=$DOMAIN" >> .env
-fi
-
-echo "✅ .env atualizado com REVERB_DOMAIN=$DOMAIN"
-
-# 4. Atualizar nginx.conf e nginx.local.conf
-for FILE in nginx/nginx.conf nginx/nginx.local.conf; do
-  if [ -f "$FILE" ]; then
-    sed -i.bak "s/server_name .*/server_name $DOMAIN;/" $FILE
-    echo "✅ $FILE atualizado com domínio $DOMAIN"
-  fi
-done
-
-# 5. Checar certificado existente
-CERT_PATH="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"
-
-if [ -f "$CERT_PATH" ]; then
-  echo "✅ Certificado já existe: $CERT_PATH"
+# Verifica se o certificado já existe
+if [ -f "/etc/letsencrypt/live/$REVERB_DOMAIN/fullchain.pem" ]; then
+  echo "✅ Certificado SSL já existe para $REVERB_DOMAIN. Pulando geração."
+  touch .cert-ok
   exit 0
 fi
 
-# 6. Gerar certificado via docker certbot
-echo "🔐 Gerando certificado SSL para $DOMAIN com e-mail $EMAIL..."
+# Solicita novo certificado via webroot
+echo "🔐 Gerando certificado SSL para $REVERB_DOMAIN..."
 
-docker run --rm \
-  -v "$(pwd)/certbot/webroot:/var/www/certbot" \
-  -v "/etc/letsencrypt:/etc/letsencrypt" \
-  -v "/var/lib/letsencrypt:/var/lib/letsencrypt" \
-  certbot/certbot certonly \
-  --webroot --webroot-path=/var/www/certbot \
-  --email "$EMAIL" --agree-tos --no-eff-email \
-  -d "$DOMAIN"
+docker-compose run --rm certbot certonly \
+  --webroot -w /var/www/certbot \
+  --email you@example.com \
+  -d $REVERB_DOMAIN \
+  --agree-tos \
+  --non-interactive
 
-echo "✅ Certificado gerado com sucesso!"
+# Marca como gerado com sucesso
+touch .cert-ok
+
+echo "✅ Certificado gerado com sucesso."
