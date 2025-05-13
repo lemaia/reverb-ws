@@ -20,10 +20,10 @@ fi
 # Solicita novo certificado via webroot
 echo "🔐 Gerando certificado SSL para $REVERB_DOMAIN..."
 
-docker-compose run --rm certbot certonly \
+docker compose run --rm certbot certonly \
   --webroot -w /var/www/certbot \
   --email you@example.com \
-  -d $REVERB_DOMAIN \
+  -d "$REVERB_DOMAIN" \
   --agree-tos \
   --non-interactive
 
