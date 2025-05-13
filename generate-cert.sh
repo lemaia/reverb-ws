@@ -1,33 +1,77 @@
-#!/bin/bash
+# Caminhos padrão
+COMPOSE=docker compose
+PROJECT_NAME=reverb
 
-set -e
+# Variáveis dinâmicas
+DOMAIN=$(shell grep ^REVERB_DOMAIN .env | cut -d '=' -f2)
+REDIS_HOST=$(shell grep ^REDIS_HOST .env | cut -d '=' -f2)
 
-# Carrega variáveis do .env
-source .env
+# ==========================
+# :: Ambiente de Desenvolvimento ::
+# ==========================
 
-if [ -z "$REVERB_DOMAIN" ]; then
-  echo "❌ Variável REVERB_DOMAIN não encontrada no .env"
-  exit 1
-fi
+dev:
+	@echo "🚀 Subindo ambiente local com Redis: $(REDIS_HOST)"
+ifeq ($(REDIS_HOST),redis)
+	$(COMPOSE) -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.redis.yml --project-name $(PROJECT_NAME)-dev up --build -d
+else
+	$(COMPOSE) -f docker-compose.yml -f docker-compose.override.yml --project-name $(PROJECT_NAME)-dev up --build -d
+endif
+	@echo "✅ Ambiente local disponível em http://localhost"
 
-# Verifica se o certificado já existe
-if [ -f "/etc/letsencrypt/live/$REVERB_DOMAIN/fullchain.pem" ]; then
-  echo "✅ Certificado SSL já existe para $REVERB_DOMAIN. Pulando geração."
-  touch .cert-ok
-  exit 0
-fi
+stop-dev:
+	@echo "⛔ Parando ambiente local..."
+ifeq ($(REDIS_HOST),redis)
+	$(COMPOSE) -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.redis.yml --project-name $(PROJECT_NAME)-dev down
+else
+	$(COMPOSE) -f docker-compose.yml -f docker-compose.override.yml --project-name $(PROJECT_NAME)-dev down
+endif
 
-# Solicita novo certificado via webroot
-echo "🔐 Gerando certificado SSL para $REVERB_DOMAIN..."
+# ==========================
+# :: Ambiente de Produção ::
+# ==========================
 
-docker compose run --rm certbot certonly \
-  --webroot -w /var/www/certbot \
-  --email you@example.com \
-  -d "$REVERB_DOMAIN" \
-  --agree-tos \
-  --non-interactive
+prod:
+	@if [ -z "$(DOMAIN)" ]; then \
+		echo "❌ REVERB_DOMAIN não encontrado no .env. Execute 'make cert' primeiro."; \
+		exit 1; \
+	fi
+	@echo "🔐 Verificando certificado SSL para $(DOMAIN)..."
+	@if [ ! -f "/etc/letsencrypt/live/$(DOMAIN)/fullchain.pem" ]; then \
+		echo "📄 Certificado não encontrado. Executando 'make cert'..."; \
+		make cert; \
+	fi
+	@echo "🚀 Subindo ambiente de produção (HTTPS) para $(DOMAIN)..."
+	$(COMPOSE) -f docker-compose.yml --project-name $(PROJECT_NAME)-prod up --build -d
+	@echo "✅ Ambiente produção disponível em https://$(DOMAIN)"
 
-# Marca como gerado com sucesso
-touch .cert-ok
+stop-prod:
+	@echo "⛔ Parando ambiente de produção..."
+	$(COMPOSE) -f docker-compose.yml --project-name $(PROJECT_NAME)-prod down
 
-echo "✅ Certificado gerado com sucesso."
+# ==========================
+# :: Utilitários ::
+# ==========================
+
+cert:
+	@echo "🌐 Garantindo nginx.http.conf antes de gerar o certificado..."
+	@cp nginx/nginx.http.conf nginx/nginx.conf
+	@$(COMPOSE) up -d nginx
+	@sleep 3
+	@./generate-cert.sh
+	@cp nginx/nginx.ssl.conf nginx/nginx.conf
+	@$(COMPOSE) restart nginx
+
+status:
+	docker ps
+
+info:
+	@echo ""
+	@echo "🔧 Ambiente atual:"
+	@echo "🔹 REVERB_DOMAIN = $(DOMAIN)"
+	@echo "🔹 REDIS_HOST    = $(REDIS_HOST)"
+	@echo ""
+
+clean:
+	@echo "🔥 Limpando containers, volumes e órfãos..."
+	$(COMPOSE) down -v --remove-orphans
